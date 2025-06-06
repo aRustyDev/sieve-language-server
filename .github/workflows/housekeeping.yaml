@@ -1,0 +1,67 @@
+name: "Housekeeping Workflow"
+
+on:
+  schedule:
+    - cron: '0 0 * * SUN' # Every sunday at 00:00
+
+env:
+  OPW_VAULT: user/app
+  DOCKERFILE: ./.config/Dockerfile
+
+jobs:
+  stale-food:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Stale Branches
+        uses: crs-k/stale-branches@v7.0.1
+      - uses: actions/stale@v9.1.0
+        with:
+          repo-token: ${{ github.token }} # secrets.GITHUB_TOKEN
+          stale-issue-message: 'Stale issue message'
+          stale-pr-message: 'Stale pull request message'
+          stale-issue-label: 'no-issue-activity'
+          stale-pr-label: 'no-pr-activity'
+  latest-actions:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Configure 1password
+        uses: 1password/load-secrets-action/configure@v2
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      - name: Load secrets
+        id: opw
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: false
+        env:
+          WORKFLOW_SECRET: op://${{ secrets.OP_VAULT }}/gh-workflow/credential
+
+      - name: Checkout Repo
+        uses: actions/checkout@v4.2.2
+        with:
+          # [Required] Access token with `workflow` scope.
+          token: ${{ steps.opw.outputs.WORKFLOW_SECRET }}
+
+      - name: GitHub Actions Version Updater
+        uses: saadmk11/github-actions-version-updater@v0.8.1
+        with:
+          # [Required] Access token with `workflow` scope.
+          token: ${{ steps.opw.outputs.WORKFLOW_SECRET }}
+  label:
+    # on: [pull_request_target]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+    - uses: actions/labeler@v5.0.0
+      with:
+        repo-token: "${{ github.token }}"
+

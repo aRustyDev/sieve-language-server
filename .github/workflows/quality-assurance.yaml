@@ -1,0 +1,203 @@
+name: "Coverage & Testing Workflow"
+
+on:
+  pull_request:
+    types:
+      - opened
+    branches:
+      - main
+
+jobs:
+  semver:
+    runs-on: ubuntu-latest
+    outputs:
+      current: ${{ steps.version.outputs.version }} 
+      previous: ${{ steps.version.outputs.previous-version }} 
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ github.head_ref }}   # checkout the correct branch name
+          fetch-depth: 0                # fetch the whole repo history
+
+      - name: Git Version
+        id: version
+        uses: codacy/git-version@2.8.0
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions-rs/toolchain@v1.0.6
+        name: install rust toolchain
+        with:
+          toolchain: nightly
+          override: true
+
+      - uses: actions-rs/grcov@v0.1.5
+
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.15.0'
+          args: '-- --test-threads 1'
+
+      - name: Load secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          # Export loaded secrets as environment variables
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          CODECOV_TOKEN: op://${{ env.OPW_VAULT }}/codecov/api_token
+
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v5.4.0
+        with:
+          token: ${{ env.CODECOV_TOKEN }}
+
+      - name: Load secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          # Remove local copies of the Docker credentials, which are not needed anymore
+          unset-previous: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: code-coverage-report
+          path: cobertura.xml
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions-rs/toolchain@v1.0.6
+        name: install rust toolchain
+        with:
+          toolchain: nightly
+          override: true
+
+      - uses: actions-rs/cargo@v1.0.1
+        name: run cargo fmt
+        with:
+          command: fmt
+
+      - uses: actions-rs/cargo@v1.0.1
+        name: run cargo clippy
+        with:
+          command: clippy
+
+  testing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions-rs/toolchain@v1.0.6
+        name: install rust toolchain
+        with:
+          toolchain: nightly
+          override: true
+
+      - uses: actions-rs/cargo@v1.0.1
+        name: run cargo fmt
+        with:
+          command: fmt
+
+      - uses: actions-rs/cargo@v1.0.1
+        with:
+          command: test
+          args: --all-features --no-fail-fast
+        env:
+          CARGO_INCREMENTAL: '0'
+          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions-rs/toolchain@v1.0.6
+        name: install rust toolchain
+        with:
+          toolchain: nightly
+          override: true
+
+      - uses: actions-rs/cargo@v1.0.1
+        name: run cargo doc
+        with:
+          command: doc
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions-rs/toolchain@v1.0.6
+        name: install rust toolchain
+        with:
+          toolchain: nightly
+          override: true
+
+      - uses: actions-rs/cargo@v1.0.1
+        name: run cargo bench
+        with:
+          command: bench
+
+      - name: Run cargo bloat
+        uses: orf/cargo-bloat-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Load secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          # Export loaded secrets as environment variables
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SNYK_TOKEN: op://${{ env.OPW_VAULT }}/snyk/key_name
+          GITGUARDIAN_API_KEY: op://${{ env.OPW_VAULT }}/gitguardian/key_name
+
+      - uses: actions-rs/toolchain@v1.0.6
+        name: install rust toolchain
+        with:
+          toolchain: nightly
+          override: true
+
+      - uses: actions-rs/audit-check@v1.2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: TruffleHog OSS
+        uses: trufflesecurity/trufflehog@v3.88.23
+
+      # - name: Snyk
+      #   uses: snyk/actions@0.4.0
+
+      - uses: gitleaks/gitleaks-action@v2.3.7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: OSSF Scorecard action
+      #   uses: ossf/scorecard-action@v2.4.1
+
+      # - name: Docker Scout
+      #   uses: docker/scout-action@v1.16.1
+
+      # - name: GitGuardian Shield Action
+      #   uses: GitGuardian/ggshield-action@v1.37.0
+      #   env:
+      #     GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
+      #     GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
+      #     GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}

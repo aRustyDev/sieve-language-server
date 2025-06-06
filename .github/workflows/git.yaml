@@ -1,0 +1,17 @@
+name: "Git Workflow"
+
+on:
+  pull_request:
+    branches: 
+      - doesnotexist
+
+env:
+  IMAGE_NAME: user/app
+  DOCKERFILE: ./.config/Dockerfile
+
+jobs:
+  merging:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Autosquash
+        uses: tibdex/autosquash@v2.2.2
