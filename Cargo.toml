@@ -1,7 +1,13 @@
 [package]
 name = "sieve_language_server"
+description = "Sieve Language Server Protocol implementation"
 version = "0.1.0"
 edition = "2024"
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+homepage = "https://github.com/libctf/sdk"
+keywords = ["sieve", "lsp", "language-server"]
+# categories = ["api-bindings", "config", "web-programming"]
 
 [[bin]]
 name = "sieve-lsp"
